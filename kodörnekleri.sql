@@ -1,3 +1,4 @@
+-- Soru 1
 -- 1)Çalışanların ad ve soyadlarını getirir
 WITH EmployeeNames AS (
     SELECT FirstName, LastName
@@ -94,3 +95,66 @@ WITH FrequentCustomers AS (
     HAVING COUNT(*) > 100
 )
 SELECT * FROM FrequentCustomers;
+
+
+-- Soru 2
+--Ürün stok adedini kontrol eden 
+CREATE PROCEDURE CheckProductStock
+    @ProductID INT
+AS
+BEGIN
+    DECLARE @Stock INT;
+    SELECT @Stock = Stock FROM Products WHERE ProductID = @ProductID;
+    IF @Stock IS NULL
+        PRINT 'Ürün bulunamadı.';
+    ELSE
+        PRINT 'Stok miktarı: ' + CAST(@Stock AS VARCHAR);
+END;
+
+
+--Ürün satıldıktan sonra stok miktarını azaltan 
+CREATE PROCEDURE ReduceProductStock
+    @ProductID INT,
+    @Quantity INT
+AS
+BEGIN
+    DECLARE @CurrentStock INT;
+    SELECT @CurrentStock = Stock FROM Products WHERE ProductID = @ProductID;
+    IF @CurrentStock IS NULL
+        THROW 50001, 'Ürün bulunamadı.', 1;
+    ELSE IF @CurrentStock < @Quantity
+        THROW 50002, 'Yeterli stok yok.', 1;
+    ELSE
+    BEGIN
+        UPDATE Products
+        SET Stock = Stock - @Quantity
+        WHERE ProductID = @ProductID;
+    END
+END;
+
+
+--Sipariş oluşturulduysa notification bilgisini çıkaran   
+CREATE PROCEDURE CreateOrderWithNotification
+    @ProductID INT,
+    @Quantity INT
+AS
+BEGIN
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Stok kontrol ve azaltma
+        EXEC ReduceProductStock @ProductID, @Quantity;
+        -- Sipariş oluştur
+        INSERT INTO Orders (ProductID, Quantity)
+        VALUES (@ProductID, @Quantity);
+        -- Bildirim oluştur
+        DECLARE @ProductName VARCHAR(100);
+        SELECT @ProductName = ProductName FROM Products WHERE ProductID = @ProductID;
+        INSERT INTO Notifications (Message)
+        VALUES ('Yeni sipariş oluşturuldu: ' + @ProductName + ', Adet: ' + CAST(@Quantity AS VARCHAR));
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK;
+        THROW;
+    END CATCH
+END;
